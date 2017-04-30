@@ -1,7 +1,9 @@
 # NP_station
-Blender np_station extension for external addon access
+
+Blender np_station extension for external addon access proposal
 
 Access from outside in your own modal operators:
+
 
 ```
 from np_station.np_point_move import snap_point
