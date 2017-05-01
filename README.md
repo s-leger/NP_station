@@ -11,6 +11,8 @@ from np_station.np_point_move import snap_point
 in your modal invoke()
     sp = snap_point()    
     sp.invoke()
+    or
+    sp.invoke(takeloc=Vector(your predefined takeloc))
     then add your handler
     
 in your modal modal()
@@ -29,6 +31,6 @@ in your modal modal()
     
     sp.delta    Vector delta from start and end point
     sp.takeloc  Vector start location
-    sp.putloc   Vector end location
+    sp.placeloc   Vector end location
 
 ```
