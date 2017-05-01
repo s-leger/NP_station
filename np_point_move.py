@@ -87,7 +87,7 @@ in your modal modal()
     
     sp.delta    Vector delta from start and end point
     sp.takeloc  Vector start location
-    sp.putloc   Vector end location
+    sp.placeloc   Vector end location
     
 """
 
@@ -133,27 +133,30 @@ class NP020PM:
     mode = 'DEFAULT'
     state = 'CANCEL'    
     takeloc = Vector((0,0,0))
-    putloc = Vector((0,0,0))
+    placeloc = Vector((0,0,0))
     
     
     
 class NPMSnapPoint():
     
-    def invoke(self, exit_condition='DEFAULT'):
-        NP020PM.mode = 'EXTERNAL'       
+    def invoke(self, takeloc=None):
+        NP020PM.mode = 'EXTERNAL'
+        if takeloc is not None:
+            NP020PM.takeloc = takeloc
+            NP020PM.flag = 'PLACE'
         bpy.ops.object.np_020_point_move('INVOKE_DEFAULT')
         
     @property
     def delta(self):
-        return NP020PM.takeloc-NP020PM.putloc
+        return NP020PM.takeloc-NP020PM.placeloc
     
     @property
     def takeloc(self):
         return NP020PM.takeloc
         
     @property
-    def putloc(self):
-        return NP020PM.putloc
+    def placeloc(self):
+        return NP020PM.placeloc
     
     @property
     def state(cls):
@@ -170,8 +173,9 @@ class NPMSnapPoint():
     @property
     def is_cancel(self):
         return NP020PM.state == 'CANCEL'
-        
-# return a factory visible from outside 
+       
+       
+# return an accessor visible from outside 
 def snap_point():
     return NPMSnapPoint()
 
@@ -323,7 +327,7 @@ class NPPMRunTranslate(bpy.types.Operator):
                 NP020PM.flag = 'PLACE'
                 NP020PM.state = 'RUNNING'
             elif flag == 'PLACE':
-                NP020PM.putloc = copy.deepcopy(helper.location)
+                NP020PM.placeloc = copy.deepcopy(helper.location)
                 NP020PM.flag = 'EXIT'
                 NP020PM.state = 'SUCCESS'
             return{'FINISHED'}
