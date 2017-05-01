@@ -148,7 +148,7 @@ class NPMSnapPoint():
         
     @property
     def delta(self):
-        return NP020PM.takeloc-NP020PM.placeloc
+        return NP020PM.placeloc-NP020PM.takeloc
     
     @property
     def takeloc(self):
