@@ -274,7 +274,10 @@ class NPPMAddHelper(bpy.types.Operator):
 
     def execute(self, context):
         # np_print('03_AddHelpers_START', ';', 'flag = ', NP020PM.flag)  
-        enterloc = NP020PM.enterloc
+        if NP020PM.mode == 'EXTERNAL' and NP020PM.flag == 'PLACE':
+            enterloc = NP020PM.takeloc
+        else:
+            enterloc = NP020PM.enterloc
         bpy.ops.object.add(type = 'MESH',location = enterloc)
         helper = bpy.context.active_object
         helper.name = 'NP_PM_helper'
