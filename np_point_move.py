@@ -122,6 +122,12 @@ class NP020PointMove(bpy.types.Macro):
     bl_label = 'NP 020 Point Move'
     bl_options = {'UNDO'}
     
+       
+# a dumb callback so we dont need to check if there or no
+
+def dumb(context, event, state):
+    pass    
+    
     
 # Defining the storage class that will serve as a variable bank for exchange among the classes. Later, this bank will receive more variables with their values for safe keeping, as the program goes on:
 
@@ -130,25 +136,35 @@ class NP020PM:
     flag = 'TAKE'
     
     # setup default values
-    mode = 'DEFAULT'
-    state = 'CANCEL'    
+    select_to_move = True
     takeloc = Vector((0,0,0))
     placeloc = Vector((0,0,0))
+    callback = dumb
     
     
     
 class NPMSnapPoint():
     
-    def invoke(self, takeloc=None):
-        NP020PM.mode = 'EXTERNAL'
+    def invoke(self, takeloc=None, callback=None):
+        """
+            callback: optionnal function(context, event, state in {'RUNNING', 'SUCCESS', 'CANCEL'}) called on changes
+            takeloc : optionnal start in PLACE mode using this point as takeloc
+        """
+        if callback is not None:
+            NP020PM.callback = callback
+        
+        # prevent np_point move selected objects
+        NP020PM.select_to_move = False
+        
         if takeloc is not None:
             NP020PM.takeloc = takeloc
             NP020PM.flag = 'PLACE'
+        
         bpy.ops.object.np_020_point_move('INVOKE_DEFAULT')
         
     @property
     def delta(self):
-        return NP020PM.placeloc-NP020PM.takeloc
+        return self.placeloc - self.takeloc
     
     @property
     def takeloc(self):
@@ -156,24 +172,12 @@ class NPMSnapPoint():
         
     @property
     def placeloc(self):
+        # take from helper when there so the delta
+        # is working even while modal is running
+        if NP020PM.helper is not None:
+            return NP020PM.helper.location
         return NP020PM.placeloc
-    
-    @property
-    def state(cls):
-        return NP020PM.flag
-        
-    @property
-    def is_running(self):
-        return NP020PM.state == 'RUNNING'
-    
-    @property
-    def is_success(self):
-        return NP020PM.state == 'SUCCESS'
-    
-    @property
-    def is_cancel(self):
-        return NP020PM.state == 'CANCEL'
-       
+
        
 # return an accessor visible from outside 
 def snap_point():
@@ -273,8 +277,9 @@ class NPPMAddHelper(bpy.types.Operator):
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        # np_print('03_AddHelpers_START', ';', 'flag = ', NP020PM.flag)  
-        if NP020PM.mode == 'EXTERNAL' and NP020PM.flag == 'PLACE':
+        # np_print('03_AddHelpers_START', ';', 'flag = ', NP020PM.flag)
+        if NP020PM.flag == 'PLACE':
+            # occurs only when external with predefined takeloc
             enterloc = NP020PM.takeloc
         else:
             enterloc = NP020PM.enterloc
@@ -328,17 +333,29 @@ class NPPMRunTranslate(bpy.types.Operator):
             if flag == 'TAKE':
                 NP020PM.takeloc = copy.deepcopy(helper.location)
                 NP020PM.flag = 'PLACE'
-                NP020PM.state = 'RUNNING'
+                NP020PM.callback(context, event, 'RUNNING')
             elif flag == 'PLACE':
                 NP020PM.placeloc = copy.deepcopy(helper.location)
                 NP020PM.flag = 'EXIT'
-                NP020PM.state = 'SUCCESS'
+                NP020PM.callback(context, event, 'SUCCESS')
             return{'FINISHED'}
-
+        
+        """
+        # NOTE:
+        # Mousemove event is captured by transform.translate modal
+        # so if you want to track running operation, use a TIMER 
+        # and retrieve delta from there
+        
+        elif event.type == 'MOUSEMOVE':
+        
+            NP020PM.placeloc = copy.deepcopy(helper.location)
+            NP020PM.callback(context, event, 'RUNNING')
+        """
+        
         elif event.type in ('ESC', 'RIGHTMOUSE'):
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
             NP020PM.flag = 'EXIT'
-            NP020PM.state = 'CANCEL'
+            NP020PM.callback(context, event, 'CANCEL')
             return{'FINISHED'}
         
         return{'PASS_THROUGH'}
@@ -348,7 +365,6 @@ class NPPMRunTranslate(bpy.types.Operator):
         helper = NP020PM.helper
         flag = NP020PM.flag
         selob = NP020PM.selob
-        print("invoke %s" % NP020PM.mode)
         # np_print('flag =', flag)
         if context.area.type == 'VIEW_3D':
             if flag == 'EXIT':
@@ -356,9 +372,8 @@ class NPPMRunTranslate(bpy.types.Operator):
                 return {'FINISHED'}
             elif flag == 'PLACE':
                 for ob in selob:
-                    ob.select = NP020PM.mode == 'DEFAULT'
+                    ob.select = NP020PM.select_to_move
                 bpy.context.scene.objects.active = helper
-            NP020PM.state = 'RUNNING'
             args = (self, context)
             self._handle = bpy.types.SpaceView3D.draw_handler_add(DRAW_RunTranslate, args, 'WINDOW', 'POST_PIXEL')
             context.window_manager.modal_handler_add(self)
@@ -462,7 +477,8 @@ class NPPMRestoreContext(bpy.types.Operator):
             bpy.context.scene.objects.active = NP020PM.acob
             bpy.ops.object.mode_set(mode = NP020PM.edit_mode)
         NP020PM.flag = 'TAKE'
-        NP020PM.mode = 'DEFAULT'
+        NP020PM.select_to_move = True
+        NP020PM.callback = dumb
         return {'FINISHED'}
 
 
