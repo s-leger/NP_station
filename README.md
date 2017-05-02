@@ -12,7 +12,7 @@ in your modal invoke()
     sp = snap_point()    
     
     sp.invoke()
-    sp.invoke takes 2 optinnal arguments:
+    sp.invoke takes 2 optionnal arguments:
     
     takeloc : Vector define your start location so the 
         tool use it and begin in place mode
