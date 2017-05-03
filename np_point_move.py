@@ -61,18 +61,18 @@ WARNINGS
 None so far
 '''
 
-"""    
+"""
 Access from outside in your own modal operators:
 
 from np_station.np_point_move import snap_point
 
 in your modal invoke()
-    sp = snap_point()    
+    sp = snap_point()
     sp.invoke()
     then add your handler
-    
+
 in your modal modal()
-    
+
     sp = snap_point()
     if sp.is_running:
         .. whatever you want to do while running
@@ -82,13 +82,13 @@ in your modal modal()
         return {'FINISHED'}
     if sp.is_cancel:
         return {'CANCELLED'}
-    
-    you may use 
-    
+
+    you may use
+
     sp.delta    Vector delta from start and end point
     sp.takeloc  Vector start location
     sp.placeloc   Vector end location
-    
+
 """
 
 bl_info = {
@@ -121,69 +121,100 @@ class NP020PointMove(bpy.types.Macro):
     bl_idname = 'object.np_020_point_move'
     bl_label = 'NP 020 Point Move'
     bl_options = {'UNDO'}
-    
-       
+
+
 # a dumb callback so we dont need to check if there or no
 
 def dumb(context, event, state):
-    pass    
-    
-    
+    pass
+
+
 # Defining the storage class that will serve as a variable bank for exchange among the classes. Later, this bank will receive more variables with their values for safe keeping, as the program goes on:
 
 class NP020PM:
-    
+
     flag = 'TAKE'
-    
+
     # setup default values
     select_to_move = True
     takeloc = Vector((0,0,0))
     placeloc = Vector((0,0,0))
     callback = dumb
-    
-    
-    
+    constrain = False
+    constrain_normal = Vector((0,0,1))
+
+
 class NPMSnapPoint():
-    
-    def invoke(self, takeloc=None, callback=None):
+
+    def invoke(self, takeloc=None, callback=None, constrain=False, normal=None):
         """
             callback: optionnal function(context, event, state in {'RUNNING', 'SUCCESS', 'CANCEL'}) called on changes
             takeloc : optionnal start in PLACE mode using this point as takeloc
+            constrain: when true, constrain placeloc over a plane defined by takeloc and normal
+                       snap over apparent location of point projected to plane.
+            normal: normal of constrain plane default to Vector((0,0,1)) for 2d plane XY
+                    fallback to view normal on ortho viewport
         """
+        # setup plane constraints if any
+        NP020PM.constrain = constrain
+        NP020PM.constrain_normal = normal
+
+        # setup a callback
         if callback is not None:
             NP020PM.callback = callback
-        
+
         # prevent np_point move selected objects
         NP020PM.select_to_move = False
-        
+
+        # allow to start in place mode with this point as take location
         if takeloc is not None:
             NP020PM.takeloc = takeloc
             NP020PM.flag = 'PLACE'
-        
+
         bpy.ops.object.np_020_point_move('INVOKE_DEFAULT')
-        
+
     @property
     def delta(self):
         return self.placeloc - self.takeloc
-    
+
     @property
     def takeloc(self):
         return NP020PM.takeloc
-        
+
     @property
     def placeloc(self):
         # take from helper when there so the delta
         # is working even while modal is running
         if NP020PM.helper is not None:
-            return NP020PM.helper.location
-        return NP020PM.placeloc
+            placeloc = NP020PM.helper.location
+        else:
+            placeloc = NP020PM.placeloc
+        if NP020PM.constrain:
+            return constrain_pos2d(bpy.context, placeloc)
+        else:
+            return placeloc
 
-       
-# return an accessor visible from outside 
+
+# return an accessor visible from outside
 def snap_point():
     return NPMSnapPoint()
 
-    
+
+def constrain_pos2d(context, placeloc):
+    """
+        constrain 3d point over plane defined by normal and takeloc
+        fallback to view normal in ortho mode
+    """
+    region = context.region
+    rv3d = context.region_data
+    ray_origin_mouse = view3d_utils.region_2d_to_origin_3d(region, rv3d, (0,0))
+    pt = mathutils.geometry.intersect_line_plane(ray_origin_mouse, placeloc,
+        NP020PM.takeloc, NP020PM.constrain_normal, False)
+    # fix issue with ortho view and parallel plane
+    if pt is None:
+        pt = mathutils.geometry.intersect_line_plane(ray_origin_mouse, placeloc,
+            NP020PM.takeloc, NP020PM.helper.location - ray_origin_mouse, False)
+    return pt
 
 
 # Defining the scene update algorithm that will track the state of the objects during modal transforms, which is otherwise impossible:
@@ -206,7 +237,7 @@ class NPPMGetContext(bpy.types.Operator):
         if bpy.context.selected_objects == []:
             self.report({'WARNING'}, "Please select objects first")
             return {'CANCELLED'}
-        NP020PM.use_snap = copy.deepcopy(bpy.context.tool_settings.use_snap) 
+        NP020PM.use_snap = copy.deepcopy(bpy.context.tool_settings.use_snap)
         NP020PM.snap_element = copy.deepcopy(bpy.context.tool_settings.snap_element)
         NP020PM.snap_target = copy.deepcopy(bpy.context.tool_settings.snap_target)
         NP020PM.pivot_point = copy.deepcopy(bpy.context.space_data.pivot_point)
@@ -327,7 +358,7 @@ class NPPMRunTranslate(bpy.types.Operator):
         flag = NP020PM.flag
         selob = NP020PM.selob
         helper = NP020PM.helper
-            
+
         if event.type in ('LEFTMOUSE', 'RET', 'NUMPAD_ENTER', 'SPACE') and event.value == 'RELEASE':
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
             if flag == 'TAKE':
@@ -339,25 +370,13 @@ class NPPMRunTranslate(bpy.types.Operator):
                 NP020PM.flag = 'EXIT'
                 NP020PM.callback(context, event, 'SUCCESS')
             return{'FINISHED'}
-        
-        """
-        # NOTE:
-        # Mousemove event is captured by transform.translate modal
-        # so if you want to track running operation, use a TIMER 
-        # and retrieve delta from there
-        
-        elif event.type == 'MOUSEMOVE':
-        
-            NP020PM.placeloc = copy.deepcopy(helper.location)
-            NP020PM.callback(context, event, 'RUNNING')
-        """
-        
+
         elif event.type in ('ESC', 'RIGHTMOUSE'):
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
             NP020PM.flag = 'EXIT'
             NP020PM.callback(context, event, 'CANCEL')
             return{'FINISHED'}
-        
+
         return{'PASS_THROUGH'}
 
     def invoke(self, context, event):
@@ -385,6 +404,7 @@ class NPPMRunTranslate(bpy.types.Operator):
             self.report({'WARNING'}, "View3D not found, cannot run operator")
             # np_print('04_RunTrans_INVOKE_DECLINED_FINISHED',';','flag = ', Storage.flag)
             return {'FINISHED'}
+
 
 
 # Defining the set of instructions that will draw the OpenGL elements on the screen during the execution of RunTranslate operator:
@@ -429,6 +449,9 @@ def DRAW_RunTranslate(self, context):
         aux_num = None
         aux_str = None
 
+        # constrain placeloc so viewport values are the right one
+        if NP020PM.constrain:
+            placeloc = constrain_pos2d(context, placeloc)
 
     # ON-SCREEN INSTRUCTIONS:
 
@@ -477,15 +500,18 @@ class NPPMRestoreContext(bpy.types.Operator):
             bpy.context.scene.objects.active = NP020PM.acob
             bpy.ops.object.mode_set(mode = NP020PM.edit_mode)
         NP020PM.flag = 'TAKE'
+        # add for external use only
         NP020PM.select_to_move = True
         NP020PM.callback = dumb
+        NP020PM.constrain = False
+        NP020PM.constrain_normal = Vector((0,0,1))
         return {'FINISHED'}
 
 
 # This is the actual addon process, the algorithm that defines the order of operator activation inside the main macro:
 
 def register():
-    
+
     NP020PointMove.define('OBJECT_OT_np_pm_get_context')
     NP020PointMove.define('OBJECT_OT_np_pm_get_selection')
     NP020PointMove.define('OBJECT_OT_np_pm_get_mouseloc')
