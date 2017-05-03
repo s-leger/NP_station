@@ -88,7 +88,17 @@ in your modal modal()
     sp.delta    Vector delta from start and end point
     sp.takeloc  Vector start location
     sp.placeloc   Vector end location
-
+    
+NOTE: 
+    mouse move events are captured by transform.translate operator,
+    so if you want update while the tool is running
+    you'll have to use a TIMER based event.
+    this is a Hack, but a working one.
+    
+    then in your modal modal()
+    if event.type == 'TIMER':
+        sp = snap_point()
+        .. do whatever you want at update time
 """
 
 bl_info = {
