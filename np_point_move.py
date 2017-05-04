@@ -61,65 +61,35 @@ WARNINGS
 None so far
 '''
 
-'''
-Using from outside in your own modal operator
+"""
+Access from outside in your own modal operators:
 
 from np_station.np_point_move import snap_point
 
 in your modal invoke()
-    sp = snap_point()    
-    
-    sp.invoke()
-    sp.invoke takes 2 optionnal arguments:
-    
-    takeloc : Vector define your start location so the 
-        tool use it and begin in place mode
-        
-    callback: function(context, event, state): 
-        a function to call back when tool change state
-        witch take context, event and state in {'RUNNING', 'SUCCESS', 'CANCEL'}
-        as arguments
-        
-    sp.invoke(takeloc=Vector(your predefined takeloc), callback=your_callback)
-    
-    then add your handler
-    
-in your callback():
     sp = snap_point()
-    
-    if state == 'RUNNING':
-        .. whatever on take loc    
-    elif state == 'SUCCESS':
-        .. whatever on place success
-    elif state == 'CANCEL'
-        .. whatever when user cancel
-        
-    you may use:
-    sp.delta    Vector delta from start and end point
-    sp.takeloc  Vector start location
-    sp.placeloc   Vector end location
-
+    sp.invoke()
+    then add your handler
 
 in your modal modal()
-    
+
     sp = snap_point()
-    you may use 
+    if sp.is_running:
+        .. whatever you want to do while running
+        return {'RUNNING_MODAL'}
+    if sp.is_success:
+        .. whatever you want to do
+        return {'FINISHED'}
+    if sp.is_cancel:
+        return {'CANCELLED'}
+
+    you may use
+
     sp.delta    Vector delta from start and end point
     sp.takeloc  Vector start location
     sp.placeloc   Vector end location
-    
-    
-NOTE: 
-    mouse move events are captured by np_snap operator,
-    so if you want update while the tool is running
-    you'll have to use a TIMER based event.
-    
-    then in your modal modal()
-    if event.type == 'TIMER':
-        sp = snap_point()
-        .. do whatever you want at update time
-        
-'''
+
+"""
 
 bl_info = {
     'name': 'NP 020 Point Move',
@@ -158,7 +128,13 @@ class NP020PointMove(bpy.types.Macro):
 def dumb(context, event, state):
     pass
 
-
+    
+# a dumb draw callback so we dont need to check if there or no    
+    
+def dumb_draw(context):
+    pass
+    
+    
 # Defining the storage class that will serve as a variable bank for exchange among the classes. Later, this bank will receive more variables with their values for safe keeping, as the program goes on:
 
 class NP020PM:
@@ -170,15 +146,19 @@ class NP020PM:
     takeloc = Vector((0,0,0))
     placeloc = Vector((0,0,0))
     callback = dumb
+    draw_callback = dumb_draw
     constrain = False
     constrain_normal = Vector((0,0,1))
-
+    
 
 class NPMSnapPoint():
 
-    def invoke(self, takeloc=None, callback=None, constrain=False, normal=None):
+    def invoke(self, takeloc=None, callback=None, draw_callback=None, constrain=False, normal=None):
         """
-            callback: optionnal function(context, event, state in {'RUNNING', 'SUCCESS', 'CANCEL'}) called on changes
+            callback: optionnal function(context, event, state in {'RUNNING', 'SUCCESS', 'CANCEL'}) 
+                      called on state changes
+            draw_callback: optionnal function(context) 
+                           allow to add our own defined draw function updated while running
             takeloc : optionnal start in PLACE mode using this point as takeloc
             constrain: when true, constrain placeloc over a plane defined by takeloc and normal
                        snap over apparent location of point projected to plane.
@@ -192,6 +172,10 @@ class NPMSnapPoint():
         # setup a callback
         if callback is not None:
             NP020PM.callback = callback
+        
+        # setup a draw_callback
+        if draw_callback is not None:
+            NP020PM.draw_callback = draw_callback
 
         # prevent np_point move selected objects
         NP020PM.select_to_move = False
@@ -504,7 +488,11 @@ def DRAW_RunTranslate(self, context):
     display_line_between_two_points(region, rv3d, takeloc, placeloc)
 
     display_distance_between_two_points(region, rv3d, takeloc, placeloc)
-
+    
+    # draw extenal tool adds
+    NP020PM.draw_callback(context)
+    
+    
 # Restoring the object selection and system settings from before the operator activation:
 
 class NPPMRestoreContext(bpy.types.Operator):
@@ -533,6 +521,7 @@ class NPPMRestoreContext(bpy.types.Operator):
         # add for external use only
         NP020PM.select_to_move = True
         NP020PM.callback = dumb
+        NP020PM.draw_callback = dumb_draw
         NP020PM.constrain = False
         NP020PM.constrain_normal = Vector((0,0,1))
         return {'FINISHED'}
