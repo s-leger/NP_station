@@ -12,21 +12,23 @@ in your modal invoke()
     sp = snap_point()    
     
     sp.invoke()
-    sp.invoke takes 2 optionnal arguments:
-    
-    takeloc : Vector define your start location so the 
-        tool use it and begin in place mode
+    sp.invoke takes 5 optionnal arguments:
+
+    callback: optionnal function(context, event, state in {'RUNNING', 'SUCCESS', 'CANCEL'}) 
+              called on state changes
+    draw_callback: optionnal function(context) 
+                   allow to add our own defined draw function updated while running
+    takeloc : optionnal start in PLACE mode using this point as takeloc
+    constrain: when true, constrain placeloc over a plane defined by takeloc and normal
+               snap over apparent location of point projected to plane.
+    normal: normal of constrain plane default to Vector((0,0,1)) for 2d plane XY
+            fallback to view normal on ortho viewport
         
-    callback: function(context, event, state): 
-        a function to call back when tool change state
-        witch take context, event and state in {'RUNNING', 'SUCCESS', 'CANCEL'}
-        as arguments
-        
-    sp.invoke(takeloc=Vector(your predefined takeloc), callback=your_callback)
+    sp.invoke(takeloc=Vector(), callback=your_callback, draw_callback=your_draw, constrain=True, normal=Vector((0,0,1)))
     
     then add your handler
     
-in your callback():
+in your callback(context, event, state):
     sp = snap_point()
     
     if state == 'RUNNING':
@@ -51,14 +53,6 @@ in your modal modal()
     sp.placeloc   Vector end location
     
     
-NOTE: 
-    mouse move events are captured by np_snap operator,
-    so if you want update while the tool is running
-    you'll have to use a TIMER based event.
-    
-    then in your modal modal()
-    if event.type == 'TIMER':
-        sp = snap_point()
-        .. do whatever you want at update time
+
 
 ```
