@@ -149,11 +149,11 @@ class NP020PM:
     draw_callback = dumb_draw
     constrain = False
     constrain_normal = Vector((0,0,1))
-    
+    constrain_origin = Vector((0,0,0))
 
 class NPMSnapPoint():
 
-    def invoke(self, takeloc=None, callback=None, draw_callback=None, constrain=False, normal=None):
+    def invoke(self, takeloc=None, origin=Vector((0,0,0)), callback=None, draw_callback=None, constrain=False, normal=Vector((0,0,1))):
         """
             callback: optionnal function(context, event, state in {'RUNNING', 'SUCCESS', 'CANCEL'}) 
                       called on state changes
@@ -167,8 +167,9 @@ class NPMSnapPoint():
         """
         # setup plane constraints if any
         NP020PM.constrain = constrain
+        NP020PM.constrain_origin = origin
         NP020PM.constrain_normal = normal
-
+        
         # setup a callback
         if callback is not None:
             NP020PM.callback = callback
@@ -183,17 +184,26 @@ class NPMSnapPoint():
         # allow to start in place mode with this point as take location
         if takeloc is not None:
             NP020PM.takeloc = takeloc
+            NP020PM.constrain_origin = takeloc
             NP020PM.flag = 'PLACE'
-
+            
         bpy.ops.object.np_020_point_move('INVOKE_DEFAULT')
-
+    
+    @property 
+    def state(self):
+        return NP020PM.flag
+        
     @property
     def delta(self):
         return self.placeloc - self.takeloc
 
     @property
     def takeloc(self):
-        return NP020PM.takeloc
+        takeloc = NP020PM.takeloc
+        if NP020PM.constrain:
+            return constrain_pos2d(bpy.context, takeloc)
+        else:    
+            return takeloc
 
     @property
     def placeloc(self):
@@ -221,13 +231,16 @@ def constrain_pos2d(context, placeloc):
     """
     region = context.region
     rv3d = context.region_data
-    ray_origin_mouse = view3d_utils.region_2d_to_origin_3d(region, rv3d, (0,0))
+    ray_origin_mouse = view3d_utils.region_2d_to_origin_3d(region, rv3d, (0.5, 0.5))
+    viewinv = rv3d.view_matrix.inverted()
+    if not rv3d.is_perspective:
+        ray_origin_mouse = placeloc - viewinv.col[2].xyz
     pt = mathutils.geometry.intersect_line_plane(ray_origin_mouse, placeloc,
-        NP020PM.takeloc, NP020PM.constrain_normal, False)
+        NP020PM.constrain_origin, NP020PM.constrain_normal, False)
     # fix issue with ortho view and parallel plane
     if pt is None:
         pt = mathutils.geometry.intersect_line_plane(ray_origin_mouse, placeloc,
-            NP020PM.takeloc, NP020PM.helper.location - ray_origin_mouse, False)
+            NP020PM.constrain_origin, -viewinv.col[2].xyz, False)
     return pt
 
 
@@ -248,7 +261,7 @@ class NPPMGetContext(bpy.types.Operator):
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        if bpy.context.selected_objects == []:
+        if NP020PM.select_to_move and bpy.context.selected_objects == []:
             self.report({'WARNING'}, "Please select objects first")
             return {'CANCELLED'}
         NP020PM.use_snap = copy.deepcopy(bpy.context.tool_settings.use_snap)
@@ -304,6 +317,7 @@ class NPPMGetMouseloc(bpy.types.Operator):
         view_vector = view3d_utils.region_2d_to_vector_3d(region, rv3d, co2d)
         enterloc = view3d_utils.region_2d_to_origin_3d(region, rv3d, co2d) + view_vector/5
         NP020PM.enterloc = copy.deepcopy(enterloc)
+        
         # np_print('02_RadMouseloc_FINISHED', ';', 'flag = ', Storage.flag)
         return{'FINISHED'}
 
@@ -463,10 +477,11 @@ def DRAW_RunTranslate(self, context):
         aux_num = None
         aux_str = None
 
-        # constrain placeloc so viewport values are the right one
+        # constrain loc so viewport values are the right one
         if NP020PM.constrain:
             placeloc = constrain_pos2d(context, placeloc)
-
+            takeloc = constrain_pos2d(context, takeloc)
+            
     # ON-SCREEN INSTRUCTIONS:
 
     region = bpy.context.region
@@ -524,6 +539,8 @@ class NPPMRestoreContext(bpy.types.Operator):
         NP020PM.draw_callback = dumb_draw
         NP020PM.constrain = False
         NP020PM.constrain_normal = Vector((0,0,1))
+        NP020PM.constrain_origin = Vector((0,0,0))
+        NP020PM.enterloc = None
         return {'FINISHED'}
 
 
